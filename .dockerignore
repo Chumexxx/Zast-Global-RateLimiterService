@@ -1,0 +1,22 @@
+# Build artifacts - these get regenerated inside the container anyway, and
+# copying host-machine bin/obj folders (which may target a different OS/
+# architecture) into the build context can actually break the build.
+**/bin/
+**/obj/
+
+# IDE / editor files
+**/.vs/
+**/.vscode/
+**/.idea/
+*.user
+
+# Git
+.git/
+.gitignore
+
+# Docs - not needed inside the image
+*.md
+architecture-diagram.png
+
+# OS files
+**/.DS_Store

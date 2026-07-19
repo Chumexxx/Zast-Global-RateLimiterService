@@ -1,0 +1,135 @@
+version: "3.9"
+
+services:
+
+  # ---------------------------------------------------------------------
+  # REDIS - the shared, fast, in-memory store that all API instances use
+  # to agree on "how many requests has this client made recently?"
+  # This is what makes the rate limiter CLUSTER-SAFE: no matter which
+  # api-1/2/3 instance receives a request, they all check the same Redis.
+  # ---------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: ratelimiter-redis
+    ports:
+      - "6379:6379" # exposed to host only for local debugging with redis-cli
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ratelimiter-net
+
+  # ---------------------------------------------------------------------
+  # POSTGRES - durable storage for usage logs (billing/analytics/dashboard).
+  # Deliberately NOT on the hot path of the rate-limit check itself.
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: ratelimiter-postgres
+    environment:
+      POSTGRES_DB: ratelimiter
+      POSTGRES_USER: ratelimiter
+      POSTGRES_PASSWORD: ratelimiter_dev_password
+    ports:
+      - "5432:5432" # exposed to host only for local debugging with psql/pgAdmin
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratelimiter -d ratelimiter"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ratelimiter-net
+
+  # ---------------------------------------------------------------------
+  # API INSTANCES - three identical copies of the same image, simulating
+  # a real cluster. None of them talk to each other directly; they only
+  # coordinate through Redis. This is the setup that proves correctness
+  # "regardless of which service instance receives the request."
+  # ---------------------------------------------------------------------
+  api-1:
+    build:
+      context: .
+      dockerfile: src/RateLimiter.Api/Dockerfile
+    container_name: ratelimiter-api-1
+    environment:
+      - INSTANCE_NAME=api-1
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__Postgres=Host=postgres;Database=ratelimiter;Username=ratelimiter;Password=ratelimiter_dev_password
+      - ASPNETCORE_URLS=http://+:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - ratelimiter-net
+
+  api-2:
+    build:
+      context: .
+      dockerfile: src/RateLimiter.Api/Dockerfile
+    container_name: ratelimiter-api-2
+    environment:
+      - INSTANCE_NAME=api-2
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__Postgres=Host=postgres;Database=ratelimiter;Username=ratelimiter;Password=ratelimiter_dev_password
+      - ASPNETCORE_URLS=http://+:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - ratelimiter-net
+
+  api-3:
+    build:
+      context: .
+      dockerfile: src/RateLimiter.Api/Dockerfile
+    container_name: ratelimiter-api-3
+    environment:
+      - INSTANCE_NAME=api-3
+      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__Postgres=Host=postgres;Database=ratelimiter;Username=ratelimiter;Password=ratelimiter_dev_password
+      - ASPNETCORE_URLS=http://+:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - ratelimiter-net
+
+  # ---------------------------------------------------------------------
+  # NGINX - single entry point, load-balances across api-1/2/3.
+  # This is the port you'll actually hit: http://localhost:8080
+  # ---------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ratelimiter-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-1
+      - api-2
+      - api-3
+    networks:
+      - ratelimiter-net
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  ratelimiter-net:
+    driver: bridge

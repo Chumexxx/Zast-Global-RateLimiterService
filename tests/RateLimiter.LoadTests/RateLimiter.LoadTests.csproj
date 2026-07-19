@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>RateLimiter.LoadTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Code-first load testing: simulates many concurrent clients hitting
+         the API through Nginx, and reports latency percentiles + throughput.
+         This is a runnable console app (dotnet run), not a `dotnet test`
+         project - load tests are a deliberate, manual action, not something
+         that should run on every CI build. -->
+    <PackageReference Include="NBomber" Version="6.4.0" />
+  </ItemGroup>
+
+</Project>

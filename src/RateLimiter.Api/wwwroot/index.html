@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Rate Limiter Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+        Chart.js pulled from a CDN rather than bundled as an npm dependency -
+        this keeps the whole dashboard to a single static HTML file with no
+        build step.
+    -->
+    <script>
+        window.chartJsLoadFailed = false;
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
+            onerror="this.dataset.failed='1'; var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'; s.onerror=function(){ window.chartJsLoadFailed = true; }; document.head.appendChild(s);"></script>
+    <style>
+        :root {
+            --bg: #0b0d13;
+            --panel: #171a23;
+            --panel-hover: #1c2030;
+            --border: #262b3a;
+            --text: #e5e7eb;
+            --muted: #8b90a3;
+            --accent: #5b8def;
+            --accent-dim: rgba(91, 141, 239, 0.15);
+            --allowed: #3ecf8e;
+            --blocked: #f2545b;
+            --radius: 14px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(circle at 15% 0%, rgba(91, 141, 239, 0.08), transparent 40%), radial-gradient(circle at 85% 15%, rgba(62, 207, 142, 0.05), transparent 40%), var(--bg);
+            color: var(--text);
+            padding: 36px;
+            min-height: 100vh;
+        }
+
+        .page {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 4px;
+        }
+
+        .logo-badge {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), #7c5bef);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: white;
+            flex-shrink: 0;
+            box-shadow: 0 4px 14px rgba(91, 141, 239, 0.35);
+        }
+
+        h1 {
+            font-size: 21px;
+            font-weight: 650;
+            margin: 0;
+            letter-spacing: -0.2px;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            margin: 6px 0 28px 52px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            margin-bottom: 26px;
+            flex-wrap: wrap;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+        }
+
+        .control-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+            .control-block .control-label {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: var(--muted);
+                font-weight: 600;
+            }
+
+        select {
+            background: #0f1219;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 9px 14px;
+            border-radius: 9px;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 180px;
+            transition: border-color 0.15s ease;
+        }
+
+            select:hover, select:focus {
+                border-color: var(--accent);
+                outline: none;
+            }
+
+        .period-group {
+            display: flex;
+            gap: 6px;
+        }
+
+        .period-btn {
+            background: #0f1219;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 9px 14px;
+            border-radius: 9px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+            .period-btn:hover {
+                border-color: var(--accent);
+                color: var(--accent);
+            }
+
+            .period-btn.active {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: white;
+            }
+
+            .period-btn.loading {
+                opacity: .7;
+                cursor: not-allowed;
+            }
+
+                .period-btn.loading::after {
+                    content: "...";
+                }
+
+        .custom-period {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .custom-input-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .custom-period input[type="number"] {
+            width: 90px;
+            background: #0f1219;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 9px 10px;
+            border-radius: 9px;
+            font-size: 14px;
+            transition: border-color 0.15s ease;
+        }
+
+            .custom-period input[type="number"]:focus {
+                border-color: var(--accent);
+                outline: none;
+            }
+
+            .custom-period input[type="number"]::-webkit-inner-spin-button {
+                opacity: 1;
+            }
+
+        .helper-text {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .error-text {
+            font-size: 12px;
+            color: var(--blocked);
+            min-height: 16px;
+            font-weight: 500;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+            .card:hover {
+                transform: translateY(-2px);
+                border-color: #3a4155;
+                background: var(--panel-hover);
+            }
+
+            .card .icon {
+                font-size: 18px;
+                margin-bottom: 10px;
+                opacity: 0.9;
+            }
+
+            .card .label {
+                color: var(--muted);
+                font-size: 12.5px;
+                margin-bottom: 6px;
+                font-weight: 500;
+            }
+
+            .card .value {
+                font-size: 28px;
+                font-weight: 700;
+                font-variant-numeric: tabular-nums;
+                letter-spacing: -0.5px;
+            }
+
+            .card.allowed .value {
+                color: var(--allowed);
+            }
+
+            .card.blocked .value {
+                color: var(--blocked);
+            }
+
+            .card.accent .value {
+                color: var(--accent);
+            }
+
+        .chart-panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px;
+            margin-bottom: 20px;
+        }
+
+            .chart-panel h2 {
+                font-size: 14.5px;
+                font-weight: 600;
+                margin: 0 0 4px 0;
+                color: var(--text);
+            }
+
+            .chart-panel .chart-caption {
+                font-size: 12.5px;
+                color: var(--muted);
+                margin: 0 0 16px 0;
+            }
+
+        canvas {
+            max-height: 300px;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            min-height: 220px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 14px;
+            padding: 48px 20px;
+            text-align: center;
+        }
+
+            .empty-state .empty-icon {
+                font-size: 26px;
+                opacity: 0.6;
+            }
+
+        .fail-safe-badge {
+            display: inline-block;
+            background: #4a3410;
+            color: #f2c14e;
+            border: 1px solid #6b4a15;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #2a1418;
+            border: 1px solid #6b2530;
+            color: #ffb4bd;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 13.5px;
+            max-width: 320px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+            .toast.visible {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+        .last-updated {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: -8px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 20px;
+            }
+
+            .subtitle {
+                margin-left: 0;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .period-group {
+                flex-wrap: wrap;
+            }
+
+            .custom-period {
+                width: 100%;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+                .custom-period input,
+                .custom-period button {
+                    width: 100%;
+                }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="logo-badge">RL</div>
+            <h1>Global Rate Limiter — Usage Dashboard</h1>
+        </div>
+        <div class="subtitle">Per-client request volume, approval rate, and latency trends.</div>
+
+        <div class="controls">
+            <div class="control-block">
+                <span class="control-label">Client</span>
+                <select id="clientSelect"></select>
+            </div>
+
+            <div class="control-block">
+                <span class="control-label">Quick range</span>
+                <div class="period-group">
+                    <button class="period-btn" data-days="10">10 days</button>
+                    <button class="period-btn active" data-days="15">15 days</button>
+                    <button class="period-btn" data-days="30">30 days</button>
+                </div>
+            </div>
+
+            <div class="control-block">
+                <span class="control-label">Custom range</span>
+                <div class="custom-period">
+                    <div class="custom-input-wrapper">
+                        <input type="number" id="customDaysInput" min="1" max="366" placeholder="e.g. 7" />
+                        <small class="helper-text">Optional &middot; 1&ndash;366 days</small>
+                        <small id="customDaysError" class="error-text"></small>
+                    </div>
+                    <button class="period-btn" id="applyCustomDaysBtn">Apply</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="last-updated" id="lastUpdated"></div>
+
+        <div class="cards">
+            <div class="card accent">
+                <div class="icon">&#128202;</div>
+                <div class="label">Total Requests</div>
+                <div class="value" id="totalRequests">–</div>
+            </div>
+            <div class="card allowed">
+                <div class="icon">&#9989;</div>
+                <div class="label">Allowed</div>
+                <div class="value" id="allowedRequests">–</div>
+            </div>
+            <div class="card blocked">
+                <div class="icon">&#128683;</div>
+                <div class="label">Blocked (429)</div>
+                <div class="value" id="blockedRequests">–</div>
+            </div>
+            <div class="card">
+                <div class="icon">&#9201;&#65039;</div>
+                <div class="label">Avg. Response Time</div>
+                <div class="value" id="avgResponseTime">–</div>
+            </div>
+        </div>
+
+        <div class="chart-panel">
+            <h2>Requests per day</h2>
+            <p class="chart-caption">Allowed vs. blocked, stacked by day.</p>
+            <div class="chart-wrapper" id="volumeChartWrapper">
+                <canvas id="volumeChart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-panel">
+            <h2>Average response time per day</h2>
+            <p class="chart-caption">The rate limiter's own decision latency, in milliseconds.</p>
+            <div class="chart-wrapper" id="latencyChartWrapper">
+                <canvas id="latencyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // Minimal, dependency-free (beyond Chart.js) dashboard logic. No build step, no framework.
+
+        let volumeChart, latencyChart;
+        let selectedDays = 15;
+        let toastTimeout;
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('visible');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.remove('visible'), 4000);
+        }
+
+        async function fetchJson(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                let detail = `HTTP ${response.status}`;
+                try {
+                    const body = await response.json();
+                    if (body && body.error) detail = body.error;
+                } catch
+                throw new Error(detail);
+            }
+            return response.json();
+        }
+
+        function animateValue(elementId, endValue, formatter) {
+            const el = document.getElementById(elementId);
+            const startValue = Number(el.dataset.rawValue || 0);
+            const duration = 500;
+            const startTime = performance.now();
+
+            function step(now) {
+                const progress = Math.min((now - startTime) / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3); 
+                const current = startValue + (endValue - startValue) * eased;
+                el.textContent = formatter(current);
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    el.dataset.rawValue = endValue;
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        async function loadClients() {
+            const clients = await fetchJson('/api/v1/dashboard/clients');
+            const select = document.getElementById('clientSelect');
+            select.innerHTML = '';
+
+            if (clients.length === 0) {
+                const option = document.createElement('option');
+                option.textContent = 'No clients found';
+                select.appendChild(option);
+                return null;
+            }
+
+            for (const clientId of clients) {
+                const option = document.createElement('option');
+                option.value = clientId;
+                option.textContent = clientId;
+                select.appendChild(option);
+            }
+
+            return clients[0];
+        }
+
+        async function loadSummary(clientId, days) {
+            const summary = await fetchJson(
+                `/api/v1/dashboard/${encodeURIComponent(clientId)}/summary?days=${days}`);
+            renderSummary(summary);
+        }
+
+        function renderSummary(summary) {
+            animateValue('totalRequests', summary.totalRequests, v => Math.round(v).toLocaleString());
+            animateValue('allowedRequests', summary.allowedRequests, v => Math.round(v).toLocaleString());
+            animateValue('blockedRequests', summary.blockedRequests, v => Math.round(v).toLocaleString());
+            document.getElementById('avgResponseTime').textContent =
+                `${summary.averageResponseTimeMs.toFixed(2)} ms`;
+
+            document.getElementById('lastUpdated').textContent =
+                `Last updated ${new Date().toLocaleTimeString()} · ${summary.periodDays}-day window`;
+
+            const labels = summary.dailyTrend.map(p => p.date);
+            const allowedSeries = summary.dailyTrend.map(p => p.allowedRequests);
+            const blockedSeries = summary.dailyTrend.map(p => p.blockedRequests);
+            const latencySeries = summary.dailyTrend.map(p => p.averageResponseTimeMs);
+
+            if (summary.totalRequests === 0) {
+                renderEmptyState('volumeChartWrapper', 'No requests recorded for this client in the selected period.');
+                renderEmptyState('latencyChartWrapper', 'No latency data yet - make a few requests against this client to populate it.');
+                return;
+            }
+
+            if (!isChartLibraryAvailable()) {
+                const message =
+                    'Charts could not load (Chart.js failed to fetch from the CDN - likely a network or firewall restriction). The numbers above are still accurate.';
+                renderEmptyState('volumeChartWrapper', message);
+                renderEmptyState('latencyChartWrapper', message);
+                return;
+            }
+
+            renderVolumeChart(labels, allowedSeries, blockedSeries);
+            renderLatencyChart(labels, latencySeries);
+        }
+
+        function isChartLibraryAvailable() {
+            return typeof Chart !== 'undefined' && !window.chartJsLoadFailed;
+        }
+
+        function renderEmptyState(wrapperId, message) {
+            const wrapper = document.getElementById(wrapperId);
+            wrapper.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">&#128202;</div>
+                        <div>${message}</div>
+                    </div>`;
+        }
+
+        function ensureCanvas(wrapperId, canvasId) {
+            const wrapper = document.getElementById(wrapperId);
+            if (!document.getElementById(canvasId)) {
+                wrapper.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+            }
+            return document.getElementById(canvasId);
+        }
+
+        function renderVolumeChart(labels, allowed, blocked) {
+            const ctx = ensureCanvas('volumeChartWrapper', 'volumeChart');
+
+            if (volumeChart) {
+                volumeChart.destroy();
+            }
+
+            volumeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Allowed', data: allowed, backgroundColor: '#3ecf8e', stack: 'requests', borderRadius: 3 },
+                        { label: 'Blocked', data: blocked, backgroundColor: '#f2545b', stack: 'requests', borderRadius: 3 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    animation: { duration: 400 },
+                    scales: {
+                        x: { stacked: true, grid: { color: '#1e222e' }, ticks: { color: '#8b90a3' } },
+                        y: { stacked: true, grid: { color: '#1e222e' }, ticks: { color: '#8b90a3' } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb', usePointStyle: true, pointStyle: 'circle' } }
+                    }
+                }
+            });
+        }
+
+        function renderLatencyChart(labels, latency) {
+            const ctx = ensureCanvas('latencyChartWrapper', 'latencyChart');
+
+            if (latencyChart) {
+                latencyChart.destroy();
+            }
+
+            latencyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Avg response time (ms)',
+                            data: latency,
+                            borderColor: '#5b8def',
+                            backgroundColor: 'rgba(91, 141, 239, 0.15)',
+                            tension: 0.3,
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    animation: { duration: 400 },
+                    scales: {
+                        x: { grid: { color: '#1e222e' }, ticks: { color: '#8b90a3' } },
+                        y: { grid: { color: '#1e222e' }, ticks: { color: '#8b90a3' } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb', usePointStyle: true, pointStyle: 'circle' } }
+                    }
+                }
+            });
+        }
+
+        function setActivePeriodButton(days) {
+            document.querySelectorAll('.period-btn[data-days]').forEach(btn => {
+                btn.classList.toggle('active', Number(btn.dataset.days) === days);
+            });
+        }
+
+        async function applyCustomDays() {
+            const input = document.getElementById('customDaysInput');
+            const error = document.getElementById('customDaysError');
+            const button = document.getElementById('applyCustomDaysBtn');
+
+            error.textContent = '';
+            input.style.borderColor = '';
+
+            if (input.value.trim() === '') {
+                return;
+            }
+
+            const value = Number(input.value);
+
+            if (!Number.isInteger(value)) {
+                error.textContent = 'Please enter a whole number.';
+                input.style.borderColor = '#f2545b';
+                input.focus();
+                return;
+            }
+
+            if (value < 1 || value > 366) {
+                error.textContent = 'Custom days must be between 1 and 366.';
+                input.style.borderColor = '#f2545b';
+                input.focus();
+                return;
+            }
+
+            selectedDays = value;
+            setActivePeriodButton(-1);
+
+            button.disabled = true;
+            button.classList.add('loading');
+            button.textContent = 'Loading';
+
+            try {
+                await refresh();
+                button.textContent = 'Applied \u2713';
+                setTimeout(() => { button.textContent = 'Apply'; }, 1200);
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
+
+        document.getElementById('applyCustomDaysBtn').addEventListener('click', applyCustomDays);
+
+        document.getElementById('customDaysInput').addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                applyCustomDays();
+            }
+        });
+
+        async function refresh() {
+            const select = document.getElementById('clientSelect');
+            const clientId = select.value;
+            if (!clientId) return;
+
+            try {
+                await loadSummary(clientId, selectedDays);
+            } catch (err) {
+                showToast(`Couldn't load data: ${err.message}`);
+            }
+        }
+
+        document.querySelectorAll('.period-btn[data-days]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                selectedDays = Number(btn.dataset.days);
+                setActivePeriodButton(selectedDays);
+
+                const customInput = document.getElementById('customDaysInput');
+                const customError = document.getElementById('customDaysError');
+                customInput.value = '';
+                customInput.style.borderColor = '';
+                customError.textContent = '';
+
+                await refresh();
+            });
+        });
+
+        document.getElementById('clientSelect').addEventListener('change', refresh);
+
+        (async function init() {
+            try {
+                const firstClient = await loadClients();
+                if (firstClient) {
+                    await refresh();
+                }
+            } catch (err) {
+                showToast(`Couldn't load dashboard: ${err.message}`);
+            }
+        })();
+    </script>
+</body>
+</html>

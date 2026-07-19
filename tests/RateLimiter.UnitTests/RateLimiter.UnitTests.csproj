@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>RateLimiter.UnitTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+
+    <!-- Spins up a REAL, throwaway Redis container for each test run, so our
+         race-condition tests exercise actual Redis atomicity guarantees
+         instead of a fake in-memory stand-in that could hide bugs. -->
+    <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RateLimiter.Domain\RateLimiter.Domain.csproj" />
+    <ProjectReference Include="..\..\src\RateLimiter.Infrastructure\RateLimiter.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
