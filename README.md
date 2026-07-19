@@ -2,7 +2,9 @@
 
 This is a high-availability, cluster-safe rate limiter built for the Vega IT Abuja Tech Challenge qualification task. It protects outbound calls to third-party APIs (banking, logistics, AI providers) with hard per-client quotas that hold correctly no matter which instance in the cluster handles a given request.
 
-![Architecture Diagram](architecture-diagram.png)
+![Architecture Diagram](architecture-diagram.jpg)
+<img width="2305" height="1418" alt="architecture-diagram" src="https://github.com/user-attachments/assets/78405077-3293-42d7-a146-e45340cea027" />
+
 
 ---
 
@@ -12,7 +14,7 @@ This is a high-availability, cluster-safe rate limiter built for the Vega IT Abu
 2. [Architecture at a glance](#architecture-at-a-glance)
 3. [Project structure](#project-structure)
 4. [Prerequisites](#prerequisites)
-5. [Running it — Docker Compose (the real deliverable)](#running-it--docker-compose-the-real-deliverable)
+5. [Running it — Docker Compose](#running-it--docker-compose)
 6. [Running it — local dev loop](#running-it--local-dev-loop)
 7. [Trying the API](#trying-the-api)
 8. [The dashboard](#the-dashboard)
